@@ -56,55 +56,54 @@ extern "C" {
 #define EV_CLOSURE_SIGNAL 1
 #define EV_CLOSURE_PERSIST 2
 
-/** Structure to define the backend of a given event_base. */
+/** 后端驱动: 回调函数 */
 struct eventop {
-	/** The name of this backend. */
-	const char *name;
-	/** Function to set up an event_base to use this backend.  It should
-	 * create a new structure holding whatever information is needed to
-	 * run the backend, and return it.  The returned pointer will get
-	 * stored by event_init into the event_base.evbase field.  On failure,
-	 * this function should return NULL. */
+	const char *name; // 后端驱动名
+	
+	// 初始化: 后端驱动运行时需要的数据, 即struct event_base中的成员evbase
 	void *(*init)(struct event_base *);
-	/** Enable reading/writing on a given fd or signal.  'events' will be
-	 * the events that we're trying to enable: one or more of EV_READ,
-	 * EV_WRITE, EV_SIGNAL, and EV_ET.  'old' will be those events that
-	 * were enabled on this fd previously.  'fdinfo' will be a structure
-	 * associated with the fd by the evmap; its size is defined by the
-	 * fdinfo field below.  It will be set to 0 the first time the fd is
-	 * added.  The function should return 0 on success and -1 on error.
-	 */
+
+	// 注册事件, 由后端驱动监听, 相当于epoll_clt(ADD)
 	int (*add)(struct event_base *, evutil_socket_t fd, short old, short events, void *fdinfo);
-	/** As "add", except 'events' contains the events we mean to disable. */
+
+	// 从后端驱动中, 删除之前监听的事件, 相当于epoll_clt(DEL)
 	int (*del)(struct event_base *, evutil_socket_t fd, short old, short events, void *fdinfo);
-	/** Function to implement the core of an event loop.  It must see which
-	    added events are ready, and cause event_active to be called for each
-	    active event (usually via event_io_active or such).  It should
-	    return 0 on success and -1 on error.
-	 */
+
+	// 执行事件循环, 监听事件的触发,等待事件的触发, 相当于epoll_wait
 	int (*dispatch)(struct event_base *, struct timeval *);
-	/** Function to clean up and free our data from the event_base. */
+
+	// 与init是反操作
 	void (*dealloc)(struct event_base *);
-	/** Flag: set if we need to reinitialize the event base after we fork.
-	 */
-	int need_reinit;
-	/** Bit-array of supported event_method_features that this backend can
-	 * provide. */
-	enum event_method_feature features;
+	
+
+	int need_reinit; // 设置是否需要在fork后重新初始化事件基
+	enum event_method_feature features; // 此后端可以提供支持event_method_features的位数组Bit-array
+	
 	/** Length of the extra information we should record for each fd that
 	    has one or more active events.  This information is recorded
 	    as part of the evmap entry for each fd, and passed as an argument
 	    to the add and del functions above.
+	      我们应该为每个具有一个或多个活动事件的fd记录的额外信息的长度。
+	    此信息被记录为每个fd的evmap条目的一部分，并作为参数传递给上面
+	    的add和del函数。
 	 */
 	size_t fdinfo_len;
 };
 
-#ifdef WIN32
-/* If we're on win32, then file descriptors are not nice low densely packed
-   integers.  Instead, they are pointer-like windows handles, and we want to
-   use a hashtable instead of an array to map fds to events.
-*/
-#define EVMAP_USE_HT
+/*-------------------------- 哈希表 --------------------------*/
+
+/*
+ *  哈希表(功能)
+ *		因为一个文件fd，可能同时注册了好多个event     
+ *      所以，哈希表的结构：(key, value) --> (fd, 事件链表)
+ *      即：以文件描述符(fd)为key，value是该fd对应的事件链表event_list
+ *
+ *  说明: 只要知道数据结构的组织方式、HASH表接口使用即可，可以参考UT_HASH
+*        就把它当作map<fd, list<event>>来使用即可！ (虽然map底层不是hash，但是效果是一样的)
+ */
+
+#ifdef WIN32  // 在WIN32环境下
+#define EVMAP_USE_HT  // 选用类似于UT_HASH的库: 即 HT_HEAD
 #endif
 
 /* #define HT_CACHE_HASH_VALS */
@@ -167,29 +166,33 @@ extern int _event_debug_mode_on;
 #define EVENT_DEBUG_MODE_IS_ON() (0)
 #endif
 
+// 第一个应该看的结构体: 事件根基(相当于插座的底座, 所有的注册的事件都有它监听)
 struct event_base {
-	/** Function pointers and other data to describe this event_base's
-	 * backend. */
-	const struct eventop *evsel;
-	/** Pointer to backend-specific data. */
-	void *evbase;
+	/* (普通事件) 后端驱动 */
+	const struct eventop *evsel;  // eventops: 后端驱动数组, 支持很多种IO多路复用的后端驱动
+	void *evbase;  // 指向后端驱动需要的数据, 由evsel->init(base)初始化, (存了什么信息, 可以以 epoll_init 返回值为例子)
+
+	/* (信号signal) 后端驱动  */
+	const struct eventop *evsigsel;  
+	struct evsig_info sig;  // 指向后端驱动需要的数据, 类型直接看(struct evsig_info)即可, 由evsig_init初始化
+
+    // 队列
+	struct event_list *activequeues;  // 激活事件队列数组(数组元素: 某个优先级的链表)
+	int nactivequeues;                // 数组长度
+
+	struct event_list eventqueue;     // 注册事件队列头
+
+    // 哈希表
+	struct event_io_map io;          // 已注册(I\O事件)的哈希表
+	struct event_signal_map sigmap;  // 已注册(signal事件)的哈希表
 
 	/** List of changes to tell backend about at next dispatch.  Only used
 	 * by the O(1) backends. */
 	struct event_changelist changelist;
 
-	/** Function pointers used to describe the backend that this event_base
-	 * uses for signals */
-	const struct eventop *evsigsel;
-	/** Data to implement the common signal handelr code. */
-	struct evsig_info sig;
-
-	/** Number of virtual events */
-	int virtual_event_count;
-	/** Number of total events added to this event_base */
-	int event_count;
-	/** Number of total events active in this event_base */
-	int event_count_active;
+	int virtual_event_count; /** Number of virtual events */
+	int event_count;         // Number of total events added to this event_base
+	int event_count_active;  // event_base中，激活事件总数
 
 	/** Set if we should terminate the loop once we're done processing
 	 * events. */
@@ -199,23 +202,11 @@ struct event_base {
 	/** Set if we should start a new instance of the loop immediately. */
 	int event_continue;
 
-	/** The currently running priority of events */
-	int event_running_priority;
+	int event_running_priority;  // 当前正在runing的事件的优先级
 
 	/** Set if we're running the event_base_loop function, to prevent
 	 * reentrant invocation. */
 	int running_loop;
-
-	/* Active event management. */
-	/** An array of nactivequeues queues for active events (ones that
-	 * have triggered, and whose callbacks need to be called).  Low
-	 * priority numbers are more important, and stall higher ones.
-	 */
-	struct event_list *activequeues;
-	/** The length of the activequeues array */
-	int nactivequeues;
-
-	/* common timeout logic */
 
 	/** An array of common_timeout_list* for all of the common timeout
 	 * values we know. */
@@ -225,18 +216,8 @@ struct event_base {
 	/** The total size of common_timeout_queues. */
 	int n_common_timeouts_allocated;
 
-	/** List of defered_cb that are active.  We run these after the active
-	 * events. */
+	// 处于活动状态的延迟的defer_queue列表。We run these after the active events
 	struct deferred_cb_queue defer_queue;
-
-	/** Mapping from file descriptors to enabled (added) events */
-	struct event_io_map io;
-
-	/** Mapping from signal numbers to enabled (added) events. */
-	struct event_signal_map sigmap;
-
-	/** All events that have been enabled (added) in this event_base */
-	struct event_list eventqueue;
 
 	/** Stored timeval; used to detect when time is running backwards. */
 	struct timeval event_tv;
@@ -283,6 +264,7 @@ struct event_base {
 	/** True if the base already has a pending notify, and we don't need
 	 * to add any more. */
 	int is_notify_pending;
+    
 	/** A socketpair used by some th_notify functions to wake up the main
 	 * thread. */
 	evutil_socket_t th_notify_fd[2];

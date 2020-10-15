@@ -548,6 +548,7 @@ event_disable_debug_mode(void)
 }
 #endif
 
+// 创建\初始化event_base
 struct event_base *
 event_base_new_with_config(const struct event_config *cfg)
 {
@@ -606,7 +607,7 @@ event_base_new_with_config(const struct event_config *cfg)
 
 		base->evsel = eventops[i];
 
-		base->evbase = base->evsel->init(base);
+		base->evbase = base->evsel->init(base);  // 创建驱动后端运行时需要的数据, 举例: epoll_init
 	}
 
 	if (base->evbase == NULL) {

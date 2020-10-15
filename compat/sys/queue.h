@@ -269,56 +269,66 @@ struct {								\
 		(head)->sqh_last = &(head)->sqh_first;			\
 } while (0)
 
-/*
- * Tail queue definitions.
- */
-#define TAILQ_HEAD(name, type)						\
-struct name {								\
-	struct type *tqh_first;	/* first element */			\
-	struct type **tqh_last;	/* addr of last next element */		\
+/*--------------------- 尾队列 ----------------------*/
+
+// 作用: 用于将event结构体串联成一个“双向”链表
+
+#define TAILQ_HEAD(name, type)								\
+struct name {													\
+	struct type  *tqh_first;	/* 指向第一个节点 */					\
+	struct type **tqh_last;	/* 指向最后一个节点的next*/					\
 }
 
-#define TAILQ_HEAD_INITIALIZER(head)					\
+/*
+ * 尾队列节点
+ *   它实际上是一个类似于双向链表的结构
+ *   tqe_next: 一直向后指，串成一个链表 (一级指针，指向该结构体)
+ *   tqe_prev: 反指向前驱节点的next (二级指针，指向变量next的地址)
+ */
+#define TAILQ_ENTRY(type)							 \
+struct {											 \
+	struct type  *tqe_next;	/* 指向下一个节点 */			 \
+	struct type **tqe_prev;	/* 指向前驱节点的next */	\
+}
+
+#define TAILQ_HEAD_INITIALIZER(head)	\
 	{ NULL, &(head).tqh_first }
 
-#define TAILQ_ENTRY(type)						\
-struct {								\
-	struct type *tqe_next;	/* next element */			\
-	struct type **tqe_prev;	/* address of previous next element */	\
-}
 
-/*
- * tail queue access methods
- */
+// 获取第一个元素
 #define	TAILQ_FIRST(head)		((head)->tqh_first)
 #define	TAILQ_END(head)			NULL
+// 获取当前元素elm的下一个元素
 #define	TAILQ_NEXT(elm, field)		((elm)->field.tqe_next)
+// 获取最后一个元素
 #define TAILQ_LAST(head, headname)					\
 	(*(((struct headname *)((head)->tqh_last))->tqh_last))
-/* XXX */
+// 获取elm的前驱
 #define TAILQ_PREV(elm, headname, field)				\
 	(*(((struct headname *)((elm)->field.tqe_prev))->tqh_last))
+// 队列是否为空
 #define	TAILQ_EMPTY(head)						\
 	(TAILQ_FIRST(head) == TAILQ_END(head))
 
+// for循环(正向)遍历每个元素
 #define TAILQ_FOREACH(var, head, field)					\
 	for((var) = TAILQ_FIRST(head);					\
 	    (var) != TAILQ_END(head);					\
 	    (var) = TAILQ_NEXT(var, field))
 
+// for循环(逆向)遍历每个元素
 #define TAILQ_FOREACH_REVERSE(var, head, headname, field)		\
 	for((var) = TAILQ_LAST(head, headname);				\
 	    (var) != TAILQ_END(head);					\
 	    (var) = TAILQ_PREV(var, headname, field))
 
-/*
- * Tail queue functions.
- */
+// 初始化尾队列
 #define	TAILQ_INIT(head) do {						\
 	(head)->tqh_first = NULL;					\
 	(head)->tqh_last = &(head)->tqh_first;				\
 } while (0)
 
+// 元素elm (头插)
 #define TAILQ_INSERT_HEAD(head, elm, field) do {			\
 	if (((elm)->field.tqe_next = (head)->tqh_first) != NULL)	\
 		(head)->tqh_first->field.tqe_prev =			\
@@ -329,6 +339,7 @@ struct {								\
 	(elm)->field.tqe_prev = &(head)->tqh_first;			\
 } while (0)
 
+// 元素elm (尾插)
 #define TAILQ_INSERT_TAIL(head, elm, field) do {			\
 	(elm)->field.tqe_next = NULL;					\
 	(elm)->field.tqe_prev = (head)->tqh_last;			\
@@ -336,6 +347,7 @@ struct {								\
 	(head)->tqh_last = &(elm)->field.tqe_next;			\
 } while (0)
 
+// 在listelm后面插入元素elm
 #define TAILQ_INSERT_AFTER(head, listelm, elm, field) do {		\
 	if (((elm)->field.tqe_next = (listelm)->field.tqe_next) != NULL)\
 		(elm)->field.tqe_next->field.tqe_prev =			\
@@ -346,6 +358,7 @@ struct {								\
 	(elm)->field.tqe_prev = &(listelm)->field.tqe_next;		\
 } while (0)
 
+// 在listelm前面插入元素elm
 #define	TAILQ_INSERT_BEFORE(listelm, elm, field) do {			\
 	(elm)->field.tqe_prev = (listelm)->field.tqe_prev;		\
 	(elm)->field.tqe_next = (listelm);				\
@@ -353,6 +366,7 @@ struct {								\
 	(listelm)->field.tqe_prev = &(elm)->field.tqe_next;		\
 } while (0)
 
+// 删除elm
 #define TAILQ_REMOVE(head, elm, field) do {				\
 	if (((elm)->field.tqe_next) != NULL)				\
 		(elm)->field.tqe_next->field.tqe_prev =			\
@@ -362,6 +376,7 @@ struct {								\
 	*(elm)->field.tqe_prev = (elm)->field.tqe_next;			\
 } while (0)
 
+// 用elm2替换elm
 #define TAILQ_REPLACE(head, elm, elm2, field) do {			\
 	if (((elm2)->field.tqe_next = (elm)->field.tqe_next) != NULL)	\
 		(elm2)->field.tqe_next->field.tqe_prev =		\

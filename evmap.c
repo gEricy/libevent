@@ -75,8 +75,8 @@ struct evmap_signal {
 */
 #ifdef EVMAP_USE_HT
 struct event_map_entry {
-	HT_ENTRY(event_map_entry) map_node;
-	evutil_socket_t fd;
+	HT_ENTRY(event_map_entry) map_node; // 哈希表的value
+	evutil_socket_t fd;  // 哈希表的key
 	union { /* This is a union in case we need to make more things that can
 			   be in the hashtable. */
 		struct evmap_io evmap_io;

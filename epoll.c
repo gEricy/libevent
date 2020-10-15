@@ -59,7 +59,7 @@ struct epollop {
 	int epfd;
 };
 
-static void *epoll_init(struct event_base *);
+static void *epoll_init(struct event_base *);  // 初始化后端驱动所需要的数据
 static int epoll_dispatch(struct event_base *, struct timeval *);
 static void epoll_dealloc(struct event_base *);
 

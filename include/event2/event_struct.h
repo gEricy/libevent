@@ -67,10 +67,10 @@ extern "C" {
 /* Fix so that people don't have to run with <sys/queue.h> */
 #ifndef TAILQ_ENTRY
 #define _EVENT_DEFINED_TQENTRY
-#define TAILQ_ENTRY(type)						\
-struct {								\
-	struct type *tqe_next;	/* next element */			\
-	struct type **tqe_prev;	/* address of previous next element */	\
+#define TAILQ_ENTRY(type)	\
+struct {						\
+	struct type *tqe_next;		\
+	struct type **tqe_prev;		\
 }
 #endif /* !TAILQ_ENTRY */
 
@@ -85,42 +85,55 @@ struct name {					\
 
 struct event_base;
 struct event {
-	TAILQ_ENTRY(event) ev_active_next;
-	TAILQ_ENTRY(event) ev_next;
+	/* 
+		与struct list_head内核链表类似: 每个TAILQ_ENTRY结构体变量，都表示该struct event属于某个队列中 
+	    举例: 
+	   		 一个event可能同时属于多个队列中，如：
+		            注册队列
+		            激活队列
+		            所有(fd相同\信号值相同)的event也会串联成一个链表 (作为哈希表的value)
+	*/
+	TAILQ_ENTRY(event) ev_active_next; // 激活事件队列 
+	TAILQ_ENTRY(event) ev_next;             // 注册事件队列
+
 	/* for managing timeouts */
 	union {
 		TAILQ_ENTRY(event) ev_next_with_common_timeout;
-		int min_heap_idx;
+		int min_heap_idx;  // 在时间堆的index
 	} ev_timeout_pos;
-	evutil_socket_t ev_fd;
 
-	struct event_base *ev_base;
+	evutil_socket_t ev_fd;  // { I\0事件: 文件描述符 } ; { signal : 信号值 }
 
+	struct event_base *ev_base;  // 该事件所属的event_base
+
+	// 因为一个事件event不可能既是I\O事件又是signal事件，所以此处使用union节省内存
+	
 	union {
 		/* used for io events */
 		struct {
-			TAILQ_ENTRY(event) ev_io_next;
+			TAILQ_ENTRY(event) ev_io_next;      // 用来构成链表，是之前讲过的哈希表的value
 			struct timeval ev_timeout;
 		} ev_io;
 
 		/* used by signal events */
 		struct {
-			TAILQ_ENTRY(event) ev_signal_next;
-			short ev_ncalls;
-			/* Allows deletes in callback */
-			short *ev_pncalls;
+			TAILQ_ENTRY(event) ev_signal_next;  // 用来构成链表，是之前讲过的哈希表的value
+			short ev_ncalls;   // signal事件触发时，调用ev_callback的次数
+			short *ev_pncalls; // 指针，指向ev_call
 		} ev_signal;
 	} _ev;
 
-	short ev_events;
-	short ev_res;		/* result passed to event callback */
-	short ev_flags;
-	ev_uint8_t ev_pri;	/* smaller numbers are higher priority */
-	ev_uint8_t ev_closure;
-	struct timeval ev_timeout;
+	short ev_events;    // 当前监听的事件类型: EV_READ, EV_WRITE, ... ...
+	short ev_res;		// 当前激活的事件类型
+	short ev_flags;     // 当前事件所处的状态: EVLIST_(xxx)
 
-	/* allows us to adopt for different types of events */
-	void (*ev_callback)(evutil_socket_t, short, void *arg);
+	ev_uint8_t ev_pri;	// 事件优先级: (很重要)
+
+	ev_uint8_t ev_closure;
+	
+	struct timeval ev_timeout;  // 定时器的超时值
+
+	void (*ev_callback)(evutil_socket_t, short, void *arg);  // 该事件触发时，将被回调的函数
 	void *ev_arg;
 };
 

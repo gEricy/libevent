@@ -719,38 +719,17 @@ int event_base_got_exit(struct event_base *);
  */
 int event_base_got_break(struct event_base *);
 
-/**
- * @name event flags
- *
- * Flags to pass to event_new(), event_assign(), event_pending(), and
- * anything else with an argument of the form "short events"
- */
-/**@{*/
-/** Indicates that a timeout has occurred.  It's not necessary to pass
- * this flag to event_for new()/event_assign() to get a timeout. */
-#define EV_TIMEOUT	0x01
-/** Wait for a socket or FD to become readable */
-#define EV_READ		0x02
-/** Wait for a socket or FD to become writeable */
-#define EV_WRITE	0x04
-/** Wait for a POSIX signal to be raised*/
-#define EV_SIGNAL	0x08
-/**
- * Persistent event: won't get removed automatically when activated.
- *
- * When a persistent event with a timeout becomes activated, its timeout
- * is reset to 0.
- */
-#define EV_PERSIST	0x10
-/** Select edge-triggered behavior, if supported by the backend. */
-#define EV_ET       0x20
-/**@}*/
 
-/**
-   @name evtimer_* macros
+#define EV_TIMEOUT	0x01  // 超时
+#define EV_READ		0x02  // 可读
+#define EV_WRITE	0x04  // 可写
+#define EV_SIGNAL	0x08  // 信号
+#define EV_PERSIST	0x10  // 持久触发 (对于timeout事件, 它一旦actived, 超时时间将设为0)
+#define EV_ET       0x20  // 边缘触发
 
-    Aliases for working with one-shot timer events */
-/**@{*/
+
+/*----------------- 超时事件 -------------------*/
+
 #define evtimer_assign(ev, b, cb, arg) \
 	event_assign((ev), (b), -1, 0, (cb), (arg))
 #define evtimer_new(b, cb, arg)	       event_new((b), -1, 0, (cb), (arg))
@@ -758,14 +737,10 @@ int event_base_got_break(struct event_base *);
 #define evtimer_del(ev)			event_del(ev)
 #define evtimer_pending(ev, tv)		event_pending((ev), EV_TIMEOUT, (tv))
 #define evtimer_initialized(ev)		event_initialized(ev)
-/**@}*/
 
-/**
-   @name evsignal_* macros
 
-   Aliases for working with signal events
- */
-/**@{*/
+/*----------------- signal事件 -------------------*/
+
 #define evsignal_add(ev, tv)		event_add((ev), (tv))
 #define evsignal_assign(ev, b, x, cb, arg)			\
 	event_assign((ev), (b), (x), EV_SIGNAL|EV_PERSIST, cb, (arg))
@@ -774,7 +749,7 @@ int event_base_got_break(struct event_base *);
 #define evsignal_del(ev)		event_del(ev)
 #define evsignal_pending(ev, tv)	event_pending((ev), EV_SIGNAL, (tv))
 #define evsignal_initialized(ev)	event_initialized(ev)
-/**@}*/
+
 
 /**
    A callback function for an event.
@@ -789,104 +764,41 @@ int event_base_got_break(struct event_base *);
  */
 typedef void (*event_callback_fn)(evutil_socket_t, short, void *);
 
-/**
-  Allocate and asssign a new event structure, ready to be added.
-
-  The function event_new() returns a new event that can be used in
-  future calls to event_add() and event_del().  The fd and events
-  arguments determine which conditions will trigger the event; the
-  callback and callback_arg arguments tell Libevent what to do when the
-  event becomes active.
-
-  If events contains one of EV_READ, EV_WRITE, or EV_READ|EV_WRITE, then
-  fd is a file descriptor or socket that should get monitored for
-  readiness to read, readiness to write, or readiness for either operation
-  (respectively).  If events contains EV_SIGNAL, then fd is a signal
-  number to wait for.  If events contains none of those flags, then the
-  event can be triggered only by a timeout or by manual activation with
-  event_active(): In this case, fd must be -1.
-
-  The EV_PERSIST flag can also be passed in the events argument: it makes
-  event_add() persistent until event_del() is called.
-
-  The EV_ET flag is compatible with EV_READ and EV_WRITE, and supported
-  only by certain backends.  It tells Libevent to use edge-triggered
-  events.
-
-  The EV_TIMEOUT flag has no effect here.
-
-  It is okay to have multiple events all listening on the same fds; but
-  they must either all be edge-triggered, or all not be edge triggerd.
-
-  When the event becomes active, the event loop will run the provided
-  callbuck function, with three arguments.  The first will be the provided
-  fd value.  The second will be a bitfield of the events that triggered:
-  EV_READ, EV_WRITE, or EV_SIGNAL.  Here the EV_TIMEOUT flag indicates
-  that a timeout occurred, and EV_ET indicates that an edge-triggered
-  event occurred.  The third event will be the callback_arg pointer that
-  you provide.
-
-  @param base the event base to which the event should be attached.
-  @param fd the file descriptor or signal to be monitored, or -1.
-  @param events desired events to monitor: bitfield of EV_READ, EV_WRITE,
-      EV_SIGNAL, EV_PERSIST, EV_ET.
-  @param callback callback function to be invoked when the event occurs
-  @param callback_arg an argument to be passed to the callback function
-
-  @return a newly allocated struct event that must later be freed with
-    event_free().
-  @see event_free(), event_add(), event_del(), event_assign()
+/*
+ * @brief 创建事件，初始化成员变量 (没有将事件添加到epoll中监听)
  */
 struct event *event_new(struct event_base *, evutil_socket_t, short, event_callback_fn, void *);
 
-
-/**
-  Prepare a new, already-allocated event structure to be added.
-
-  The function event_assign() prepares the event structure ev to be used
-  in future calls to event_add() and event_del().  Unlike event_new(), it
-  doesn't allocate memory itself: it requires that you have already
-  allocated a struct event, probably on the heap.  Doing this will
-  typically make your code depend on the size of the event structure, and
-  thereby create incompatibility with future versions of Libevent.
-
-  The easiest way to avoid this problem is just to use event_new() and
-  event_free() instead.
-
-  A slightly harder way to future-proof your code is to use
-  event_get_struct_event_size() to determine the required size of an event
-  at runtime.
-
-  Note that it is NOT safe to call this function on an event that is
-  active or pending.  Doing so WILL corrupt internal data structures in
-  Libevent, and lead to strange, hard-to-diagnose bugs.  You _can_ use
-  event_assign to change an existing event, but only if it is not active
-  or pending!
-
-  The arguments for this function, and the behavior of the events that it
-  makes, are as for event_new().
-
-  @param ev an event struct to be modified
-  @param base the event base to which ev should be attached.
-  @param fd the file descriptor to be monitored
-  @param events desired events to monitor; can be EV_READ and/or EV_WRITE
-  @param callback callback function to be invoked when the event occurs
-  @param callback_arg an argument to be passed to the callback function
-
-  @return 0 if success, or -1 on invalid arguments.
-
-  @see event_new(), event_add(), event_del(), event_base_once(),
-    event_get_struct_event_size()
-  */
+/*
+ * @brief 初始化ev成员变量 (没有将事件添加到epoll中监听)
+ */
 int event_assign(struct event *, struct event_base *, evutil_socket_t, short, event_callback_fn, void *);
 
-/**
-   Deallocate a struct event * returned by event_new().
-
-   If the event is pending or active, first make it non-pending and
-   non-active.
+/*
+ * @brief 释放事件ev的内存
  */
 void event_free(struct event *);
+
+/*
+ * @brief 将事件状态设为初始化状态
+ */
+int event_initialized(const struct event *ev);
+
+/*
+ * @brief 将事件添加到event_base中监听
+ */
+int event_add(struct event *ev, const struct timeval *timeout);
+
+/*
+ * @brief 将事件从event_base监听中移除
+ */
+int event_del(struct event *);
+
+/*
+ * @brief 手动激活事件
+ */
+void event_active(struct event *ev, int res, short ncalls);
+
 
 /**
   Schedule a one-time event
@@ -913,60 +825,6 @@ void event_free(struct event *);
 int event_base_once(struct event_base *, evutil_socket_t, short, event_callback_fn, void *, const struct timeval *);
 
 /**
-  Add an event to the set of pending events.
-
-  The function event_add() schedules the execution of the ev event when the
-  event specified in event_assign()/event_new() occurs, or when the time
-  specified in timeout has elapesed.  If atimeout is NULL, no timeout
-  occurs and the function will only be
-  called if a matching event occurs.  The event in the
-  ev argument must be already initialized by event_assign() or event_new()
-  and may not be used
-  in calls to event_assign() until it is no longer pending.
-
-  If the event in the ev argument already has a scheduled timeout, calling
-  event_add() replaces the old timeout with the new one, or clears the old
-  timeout if the timeout argument is NULL.
-
-  @param ev an event struct initialized via event_set()
-  @param timeout the maximum amount of time to wait for the event, or NULL
-         to wait forever
-  @return 0 if successful, or -1 if an error occurred
-  @see event_del(), event_assign(), event_new()
-  */
-int event_add(struct event *ev, const struct timeval *timeout);
-
-/**
-  Remove an event from the set of monitored events.
-
-  The function event_del() will cancel the event in the argument ev.  If the
-  event has already executed or has never been added the call will have no
-  effect.
-
-  @param ev an event struct to be removed from the working set
-  @return 0 if successful, or -1 if an error occurred
-  @see event_add()
- */
-int event_del(struct event *);
-
-
-/**
-  Make an event active.
-
-  You can use this function on a pending or a non-pending event to make it
-  active, so that its callback will be run by event_base_dispatch() or
-  event_base_loop().
-
-  One common use in multithreaded programs is to wake the thread running
-  event_base_loop() from another thread.
-
-  @param ev an event to make active.
-  @param res a set of flags to pass to the event's callback.
-  @param ncalls an obsolete argument: this is ignored.
- **/
-void event_active(struct event *ev, int res, short ncalls);
-
-/**
   Checks if a specific event is pending or scheduled.
 
   @param ev an event struct previously passed to event_add()
@@ -982,61 +840,13 @@ void event_active(struct event *ev, int res, short ncalls);
 int event_pending(const struct event *ev, short events, struct timeval *tv);
 
 
-/**
-  Test if an event structure might be initialized.
-
-  The event_initialized() function can be used to check if an event has been
-  initialized.
-
-  Warning: This function is only useful for distinguishing a a zeroed-out
-    piece of memory from an initialized event, it can easily be confused by
-    uninitialized memory.  Thus, it should ONLY be used to distinguish an
-    initialized event from zero.
-
-  @param ev an event structure to be tested
-  @return 1 if the structure might be initialized, or 0 if it has not been
-          initialized
- */
-int event_initialized(const struct event *ev);
-
-/**
-   Get the signal number assigned to a signal event
-*/
+/*------------ 获得事件event的成员变量 ------------*/
 #define event_get_signal(ev) ((int)event_get_fd(ev))
-
-/**
-   Get the socket or signal assigned to an event, or -1 if the event has
-   no socket.
-*/
 evutil_socket_t event_get_fd(const struct event *ev);
-
-/**
-   Get the event_base associated with an event.
-*/
 struct event_base *event_get_base(const struct event *ev);
-
-/**
-   Return the events (EV_READ, EV_WRITE, etc) assigned to an event.
-*/
 short event_get_events(const struct event *ev);
-
-/**
-   Return the callback assigned to an event.
-*/
 event_callback_fn event_get_callback(const struct event *ev);
-
-/**
-   Return the callback argument assigned to an event.
-*/
 void *event_get_callback_arg(const struct event *ev);
-
-/**
-   Extract _all_ of arguments given to construct a given event.  The
-   event_base is copied into *base_out, the fd is copied into *fd_out, and so
-   on.
-
-   If any of the "_out" arguments is NULL, it will be ignored.
- */
 void event_get_assignment(const struct event *event,
     struct event_base **base_out, evutil_socket_t *fd_out, short *events_out,
     event_callback_fn *callback_out, void **arg_out);

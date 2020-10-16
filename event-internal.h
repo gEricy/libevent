@@ -43,18 +43,18 @@ extern "C" {
 /* map union members back */
 
 /* mutually exclusive */
-#define ev_signal_next	_ev.ev_signal.ev_signal_next
-#define ev_io_next	_ev.ev_io.ev_io_next
+#define ev_signal_next	_ev.ev_signal.ev_signal_next   // 哈希表的value: 相同signo的信号事件
+#define ev_io_next	    _ev.ev_io.ev_io_next           // 哈希表的value: 相同fd的I\O事件
 #define ev_io_timeout	_ev.ev_io.ev_timeout
 
 /* used only by signals */
 #define ev_ncalls	_ev.ev_signal.ev_ncalls
 #define ev_pncalls	_ev.ev_signal.ev_pncalls
 
-/* Possible values for ev_closure in struct event. */
-#define EV_CLOSURE_NONE 0
-#define EV_CLOSURE_SIGNAL 1
-#define EV_CLOSURE_PERSIST 2
+
+#define EV_CLOSURE_NONE    0  // 默认行为
+#define EV_CLOSURE_SIGNAL  1  // 信号事件
+#define EV_CLOSURE_PERSIST 2  // 持久化事件
 
 /** 后端驱动: 回调函数 */
 struct eventop {
@@ -178,7 +178,7 @@ struct event_base {
 
     // 队列
 	struct event_list *activequeues;  // 激活事件队列数组(数组元素: 某个优先级的链表)
-	int nactivequeues;                // 数组长度
+	int nactivequeues;                // 数组长度(最大的优先级)
 
 	struct event_list eventqueue;     // 注册事件队列头
 

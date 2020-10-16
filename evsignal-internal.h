@@ -34,13 +34,13 @@
 
 typedef void (*ev_sighandler_t)(int);
 
-/* Data structure for the default signal-handling implementation in signal.c
+/* 信号后端驱动所需要的数据
  */
 struct evsig_info {
 	/* Event watching ev_signal_pair[1] */
-	struct event ev_signal;
+	struct event ev_signal;  // 在event_base上，监控ev_signal_pair[1]套接字读事件
 	/* Socketpair used to send notifications from the signal handler */
-	evutil_socket_t ev_signal_pair[2];
+	evutil_socket_t ev_signal_pair[2];  // 管道
 	/* True iff we've added the ev_signal event yet. */
 	int ev_signal_added;
 	/* Count of the number of signals we're currently watching. */
@@ -56,7 +56,10 @@ struct evsig_info {
 	/* Size of sh_old. */
 	int sh_old_max;
 };
+
+// 创建&&初始化信号后端结构体 (struct eventop)
 int evsig_init(struct event_base *);
+
 void evsig_dealloc(struct event_base *);
 
 void evsig_set_base(struct event_base *base);

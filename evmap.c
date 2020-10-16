@@ -51,19 +51,17 @@
 #include "mm-internal.h"
 #include "changelist-internal.h"
 
-/** An entry for an evmap_io list: notes all the events that want to read or
-	write on a given fd, and the number of each.
-  */
+
+// 读写哈希表的value: 同一个fd的读写事件链表
 struct evmap_io {
-	struct event_list events;
-	ev_uint16_t nread;
-	ev_uint16_t nwrite;
+	struct event_list events;  // i\o event构成的链表
+	ev_uint16_t nread;   // 读次数
+	ev_uint16_t nwrite;  // 写次数
 };
 
-/* An entry for an evmap_signal list: notes all the events that want to know
-   when a signal triggers. */
+// 信号哈希表的value: 同一个signo的信号事件链表
 struct evmap_signal {
-	struct event_list events;
+	struct event_list events; // 信号event构成的链表
 };
 
 /* On some platforms, fds start at 0 and increment by 1 as they are
@@ -266,7 +264,8 @@ evmap_io_add(struct event_base *base, evutil_socket_t fd, struct event *ev)
 	struct event_io_map *io = &base->io;
 	struct evmap_io *ctx = NULL;
 	int nread, nwrite, retval = 0;
-	short res = 0, old = 0;
+	short res = 0;  // 记录是否已经加入到IO多路复用中
+    short old = 0;
 	struct event *old_ev;
 
 	EVUTIL_ASSERT(fd == ev->ev_fd);
@@ -299,7 +298,7 @@ evmap_io_add(struct event_base *base, evutil_socket_t fd, struct event *ev)
 		if (++nwrite == 1)
 			res |= EV_WRITE;
 	}
-	if (EVUTIL_UNLIKELY(nread > 0xffff || nwrite > 0xffff)) {
+	if (EVUTIL_UNLIKELY(nread > 0xffff || nwrite > 0xffff)) {  // 对同一个fd的读写次数有最大限制
 		event_warnx("Too many events reading or writing on fd %d",
 		    (int)fd);
 		return -1;
@@ -313,11 +312,10 @@ evmap_io_add(struct event_base *base, evutil_socket_t fd, struct event *ev)
 	}
 
 	if (res) {
+        // 说明是第一次，需要加入到IO多路复用中
 		void *extra = ((char*)ctx) + sizeof(struct evmap_io);
-		/* XXX(niels): we cannot mix edge-triggered and
-		 * level-triggered, we should probably assert on
-		 * this. */
-		if (evsel->add(base, ev->ev_fd,
+
+		if (evsel->add(base, ev->ev_fd,  // 参考(epoll_nochangelist_add)
 			old, (ev->ev_events & EV_ET) | res, extra) == -1)
 			return (-1);
 		retval = 1;
@@ -325,7 +323,8 @@ evmap_io_add(struct event_base *base, evutil_socket_t fd, struct event *ev)
 
 	ctx->nread = (ev_uint16_t) nread;
 	ctx->nwrite = (ev_uint16_t) nwrite;
-	TAILQ_INSERT_TAIL(&ctx->events, ev, ev_io_next);
+    
+	TAILQ_INSERT_TAIL(&ctx->events, ev, ev_io_next);  // 插入IO哈希表
 
 	return (retval);
 }
@@ -396,12 +395,14 @@ evmap_io_active(struct event_base *base, evutil_socket_t fd, short events)
 #ifndef EVMAP_USE_HT
 	EVUTIL_ASSERT(fd < io->nentries);
 #endif
+
+    // 由fd找到对应event_map_entry的TAILQ_HEAD
 	GET_IO_SLOT(ctx, io, fd, evmap_io);
 
-	EVUTIL_ASSERT(ctx);
+    // 遍历该队列ctx，将所有与fd相关联的事件都执行下面操作
 	TAILQ_FOREACH(ev, &ctx->events, ev_io_next) {
 		if (ev->ev_events & events)
-			event_active_nolock(ev, ev->ev_events & events, 1);
+			event_active_nolock(ev, ev->ev_events & events, 1);  // 将ev加入激活队列
 	}
 }
 
@@ -462,6 +463,7 @@ evmap_signal_del(struct event_base *base, int sig, struct event *ev)
 	return (1);
 }
 
+// signal事件加入到激活队列 (signal事件，加入到优先级最高的队列)
 void
 evmap_signal_active(struct event_base *base, evutil_socket_t sig, int ncalls)
 {
@@ -473,7 +475,7 @@ evmap_signal_active(struct event_base *base, evutil_socket_t sig, int ncalls)
 	GET_SIGNAL_SLOT(ctx, map, sig, evmap_signal);
 
 	TAILQ_FOREACH(ev, &ctx->events, ev_signal_next)
-		event_active_nolock(ev, EV_SIGNAL, ncalls);
+		event_active_nolock(ev, EV_SIGNAL, ncalls);   // 将信号ev加入到激活队列
 }
 
 void *

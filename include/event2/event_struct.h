@@ -54,17 +54,16 @@ extern "C" {
 /* For evkeyvalq */
 #include <event2/keyvalq_struct.h>
 
-#define EVLIST_TIMEOUT	0x01
-#define EVLIST_INSERTED	0x02
-#define EVLIST_SIGNAL	0x04
-#define EVLIST_ACTIVE	0x08
-#define EVLIST_INTERNAL	0x10
-#define EVLIST_INIT	0x80
+#define EVLIST_TIMEOUT	0x01   // 事件已经加入时间堆or定时器队列
+#define EVLIST_INSERTED	0x02   // 事件已经被加入注册队列
+#define EVLIST_SIGNAL	0x04   // 未使用
+#define EVLIST_ACTIVE	0x08   // 事件已经被加入激活队列
+#define EVLIST_INTERNAL	0x10   // 内部使用，优先级高，signal事件使用到
+#define EVLIST_INIT	    0x80   // 初始化
 
-/* EVLIST_X_ Private space: 0x1000-0xf000 */
+/* EVLIST_X_ Private space: 0x1000-0xf000 所有标志，这个不能取 */
 #define EVLIST_ALL	(0xf000 | 0x9f)
 
-/* Fix so that people don't have to run with <sys/queue.h> */
 #ifndef TAILQ_ENTRY
 #define _EVENT_DEFINED_TQENTRY
 #define TAILQ_ENTRY(type)	\
@@ -76,10 +75,10 @@ struct {						\
 
 #ifndef TAILQ_HEAD
 #define _EVENT_DEFINED_TQHEAD
-#define TAILQ_HEAD(name, type)			\
+#define TAILQ_HEAD(name, type)	\
 struct name {					\
-	struct type *tqh_first;			\
-	struct type **tqh_last;			\
+	struct type *tqh_first;		\
+	struct type **tqh_last;		\
 }
 #endif
 

@@ -90,6 +90,7 @@
 static int evsig_add(struct event_base *, evutil_socket_t, short, short, void *);
 static int evsig_del(struct event_base *, evutil_socket_t, short, short, void *);
 
+// signal事件驱动
 static const struct eventop evsigops = {
 	"signal",
 	NULL,
@@ -125,14 +126,18 @@ evsig_set_base(struct event_base *base)
 	EVSIGBASE_UNLOCK();
 }
 
-/* Callback for when the signal handler write a byte to our signaling socket */
+/* 
+ *  @brief  当IO多路复用监听到signal事件到来时，将调用注册evsig_cb
+ *       1. 信号事件具有最高优先级
+ *       2. 处理过程: 接收一个个的信号，将该信号注册的事件，添加到激活队列
+ */
 static void
 evsig_cb(evutil_socket_t fd, short what, void *arg)
 {
 	static char signals[1024];
 	ev_ssize_t n;
 	int i;
-	int ncaught[NSIG];
+	int ncaught[NSIG];  // 每个信号触发次数数组
 	struct event_base *base;
 
 	base = arg;
@@ -140,7 +145,7 @@ evsig_cb(evutil_socket_t fd, short what, void *arg)
 	memset(&ncaught, 0, sizeof(ncaught));
 
 	while (1) {
-		n = recv(fd, signals, sizeof(signals), 0);
+		n = recv(fd, signals, sizeof(signals), 0);  // 接收一个个的信号
 		if (n == -1) {
 			int err = evutil_socket_geterror(fd);
 			if (! EVUTIL_ERR_RW_RETRIABLE(err))
@@ -153,27 +158,27 @@ evsig_cb(evutil_socket_t fd, short what, void *arg)
 		for (i = 0; i < n; ++i) {
 			ev_uint8_t sig = signals[i];
 			if (sig < NSIG)
-				ncaught[sig]++;
+				ncaught[sig]++;  // 统计每个信号触发次数
 		}
 	}
 
 	EVBASE_ACQUIRE_LOCK(base, th_base_lock);
+
+    // 遍历每个信号
 	for (i = 0; i < NSIG; ++i) {
 		if (ncaught[i])
-			evmap_signal_active(base, i, ncaught[i]);
+			evmap_signal_active(base, i, ncaught[i]); // 将该信号加入到激活队列
 	}
+    
 	EVBASE_RELEASE_LOCK(base, th_base_lock);
 }
 
+// 创建&&初始化信号后端结构体 (struct eventop)
 int
 evsig_init(struct event_base *base)
 {
-	/*
-	 * Our signal handler is going to write to one end of the socket
-	 * pair to wake up our event loop.  The event loop then scans for
-	 * signals that got delivered.
-	 */
-	if (evutil_socketpair(
+	// 信号：统一事件源
+	if (evutil_socketpair(  // 全双工管道
 		    AF_UNIX, SOCK_STREAM, 0, base->sig.ev_signal_pair) == -1) {
 #ifdef WIN32
 		/* Make this nonfatal on win32, where sometimes people
@@ -187,17 +192,19 @@ evsig_init(struct event_base *base)
 
 	evutil_make_socket_closeonexec(base->sig.ev_signal_pair[0]);
 	evutil_make_socket_closeonexec(base->sig.ev_signal_pair[1]);
-	base->sig.sh_old = NULL;
-	base->sig.sh_old_max = 0;
-
 	evutil_make_socket_nonblocking(base->sig.ev_signal_pair[0]);
 	evutil_make_socket_nonblocking(base->sig.ev_signal_pair[1]);
 
+	base->sig.sh_old = NULL;
+	base->sig.sh_old_max = 0;
+
+    // ev_signal_pair[1]插到event_base中监控读事件到来
+    // ev_signal_pair[0]，当捕获到某个信号时，将会向ev_signal_pair[0]写入该信号值signo，触发ev_signal_pair[1]上的读事件
 	event_assign(&base->sig.ev_signal, base, base->sig.ev_signal_pair[1],
 		EV_READ | EV_PERSIST, evsig_cb, base);
 
-	base->sig.ev_signal.ev_flags |= EVLIST_INTERNAL;
-	event_priority_set(&base->sig.ev_signal, 0);
+	base->sig.ev_signal.ev_flags |= EVLIST_INTERNAL;  // 事件类型: 内部事件
+	event_priority_set(&base->sig.ev_signal, 0);  // 非常重要: signal事件具有最高的优先级
 
 	base->evsigsel = &evsigops;
 
@@ -272,6 +279,9 @@ _evsig_set_handler(struct event_base *base,
 	return (0);
 }
 
+/*
+ *   将信号evsignal注册到event_base中监听
+ */
 static int
 evsig_add(struct event_base *base, evutil_socket_t evsignal, short old, short events, void *p)
 {
@@ -293,17 +303,20 @@ evsig_add(struct event_base *base, evutil_socket_t evsignal, short old, short ev
 	}
 	evsig_base = base;
 	evsig_base_n_signals_added = ++sig->ev_n_signals_added;
-	evsig_base_fd = base->sig.ev_signal_pair[0];
+	evsig_base_fd = base->sig.ev_signal_pair[0];  // 统一事件源
 	EVSIGBASE_UNLOCK();
 
 	event_debug(("%s: %d: changing signal handler", __func__, (int)evsignal));
+
+    // 信号作为统一事件源的处理原理：
+    //     注册信号evsignal的处理函数：当evsignal信号到来时，回调evsig_handler向ev_signal_pair[0]中写入数据
+    //          --> 将会触发在event_base上监听的ev_signal_pair[1]读事件
 	if (_evsig_set_handler(base, (int)evsignal, evsig_handler) == -1) {
 		goto err;
 	}
 
-
 	if (!sig->ev_signal_added) {
-		if (event_add(&sig->ev_signal, NULL))
+		if (event_add(&sig->ev_signal, NULL)) // 将信号事件ev注册到event_base中监听
 			goto err;
 		sig->ev_signal_added = 1;
 	}
@@ -365,8 +378,9 @@ evsig_del(struct event_base *base, evutil_socket_t evsignal, short old, short ev
 	return (_evsig_restore_handler(base, (int)evsignal));
 }
 
+// 捕捉到信号时，信号处理函数
 static void __cdecl
-evsig_handler(int sig)
+evsig_handler(int sig) 
 {
 	int save_errno = errno;
 #ifdef WIN32
@@ -387,7 +401,7 @@ evsig_handler(int sig)
 
 	/* Wake up our notification mechanism */
 	msg = sig;
-	send(evsig_base_fd, (char*)&msg, 1, 0);
+	send(evsig_base_fd, (char*)&msg, 1, 0);  // 向[0]套接字写入数据
 	errno = save_errno;
 #ifdef WIN32
 	EVUTIL_SET_SOCKET_ERROR(socket_errno);

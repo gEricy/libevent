@@ -193,11 +193,15 @@ void event_set(struct event *, evutil_socket_t, short, void (*)(evutil_socket_t,
 /**@}*/
 
 /**
-   @name signal_* macros
-
-   @deprecated These macros are deprecated because their naming is inconsistent
-     with the rest of Libevent.  Use the evsignal_* macros instead.
-   @{
+   @brief   信号事件
+   @detail  socket_pair套接字
+            1. 在event_base注册了socket_pair[0]的事件监听，回调函数(evsig_cb)
+                   回调函数功能: 接收一个个的信号signo，将该信号注册的事件，添加到激活队列
+            2. signal函数注册信号处理函数：当信号发生时，触发信号回调函数，向socket_pair[1]写入数据
+            3. 此时，会先按照优先级执行激活的事件
+                  (1) 因为signal事件优先级最高，故会先执行，即：在event_base上监听的socket_pair[0]端的事
+                      件将会触发，调用该事件的回调函数(evsig_cb)，此时，所有的信号事件都已经加入到信号队列中
+                  (2) 之后，调用用户给signo事件注册的函数
  */
 #define signal_add(ev, tv)		event_add((ev), (tv))
 #define signal_set(ev, x, cb, arg)				\

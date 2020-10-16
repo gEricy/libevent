@@ -54,8 +54,8 @@
 #include "changelist-internal.h"
 
 struct epollop {
-	struct epoll_event *events;
-	int nevents;
+	struct epoll_event *events;  // 事件激活队列，epoll_wait返回集合事件数组
+	int nevents;   // 激活事件数组长度
 	int epfd;
 };
 
@@ -112,13 +112,13 @@ epoll_init(struct event_base *base)
 
 	/* Initialize the kernel queue.  (The size field is ignored since
 	 * 2.6.8.) */
-	if ((epfd = epoll_create(32000)) == -1) {
+	if ((epfd = epoll_create(32000)) == -1) {  // 创建IO多路复用句柄：红黑树
 		if (errno != ENOSYS)
 			event_warn("epoll_create");
 		return (NULL);
 	}
 
-	evutil_make_socket_closeonexec(epfd);
+	evutil_make_socket_closeonexec(epfd);  // 设置为CLOSE_EXEC
 
 	if (!(epollop = mm_calloc(1, sizeof(struct epollop)))) {
 		close(epfd);
@@ -127,7 +127,7 @@ epoll_init(struct event_base *base)
 
 	epollop->epfd = epfd;
 
-	/* Initialize fields */
+    // 激活事件数组
 	epollop->events = mm_calloc(INITIAL_NEVENT, sizeof(struct epoll_event));
 	if (epollop->events == NULL) {
 		mm_free(epollop);
@@ -141,6 +141,7 @@ epoll_init(struct event_base *base)
 		evutil_getenv("EVENT_EPOLL_USE_CHANGELIST") != NULL))
 		base->evsel = &epollops_changelist;
 
+    // 创建\初始化(信号后端)
 	evsig_init(base);
 
 	return (epollop);
@@ -178,19 +179,8 @@ epoll_apply_one_change(struct event_base *base,
 	struct epoll_event epev;
 	int op, events = 0;
 
+    // epoll_ctl : { EPOLL_CTL_ADD, EPOLL_CTL_MOD, EPOLL_CTL_DEL }
 	if (1) {
-		/* The logic here is a little tricky.  If we had no events set
-		   on the fd before, we need to set op="ADD" and set
-		   events=the events we want to add.  If we had any events set
-		   on the fd before, and we want any events to remain on the
-		   fd, we need to say op="MOD" and set events=the events we
-		   want to remain.  But if we want to delete the last event,
-		   we say op="DEL" and set events=the remaining events.  What
-		   fun!
-		*/
-
-		/* TODO: Turn this into a switch or a table lookup. */
-
 		if ((ch->read_change & EV_CHANGE_ADD) ||
 		    (ch->write_change & EV_CHANGE_ADD)) {
 			/* If we are adding anything at all, we'll want to do
@@ -348,6 +338,7 @@ epoll_apply_changes(struct event_base *base)
 	return (r);
 }
 
+// 添加到IO多路复用中监听
 static int
 epoll_nochangelist_add(struct event_base *base, evutil_socket_t fd,
     short old, short events, void *p)
@@ -382,6 +373,14 @@ epoll_nochangelist_del(struct event_base *base, evutil_socket_t fd,
 	return epoll_apply_one_change(base, base->evbase, &ch);
 }
 
+/* 
+ *  @brief  epoll_wait + 就绪事件添加到激活队列
+ *     1. epoll_wait等待事件触发，获取所有激活事件
+ *            epoll_wait触发的条件有2个：
+ *                  (1) 超时  
+ *                  (2) 事件到来: fd可读写
+ *     2. 将就绪事件添加到激活队列 (全部是I\O事件)
+ */
 static int
 epoll_dispatch(struct event_base *base, struct timeval *tv)
 {
@@ -404,6 +403,7 @@ epoll_dispatch(struct event_base *base, struct timeval *tv)
 
 	EVBASE_RELEASE_LOCK(base, th_base_lock);
 
+    // 等待事件触发
 	res = epoll_wait(epollop->epfd, events, epollop->nevents, timeout);
 
 	EVBASE_ACQUIRE_LOCK(base, th_base_lock);
@@ -420,6 +420,7 @@ epoll_dispatch(struct event_base *base, struct timeval *tv)
 	event_debug(("%s: epoll_wait reports %d", __func__, res));
 	EVUTIL_ASSERT(res <= epollop->nevents);
 
+    // 遍历每个触发的事件
 	for (i = 0; i < res; i++) {
 		int what = events[i].events;
 		short ev = 0;
@@ -436,7 +437,9 @@ epoll_dispatch(struct event_base *base, struct timeval *tv)
 		if (!ev)
 			continue;
 
-		evmap_io_active(base, events[i].data.fd, ev | EV_ET);
+		evmap_io_active(base, events[i].data.fd, ev | EV_ET); //  将就绪事件ev加入到激活队列
+		// 备注: I\O事件(fd), 信号事件(socket_pair[0]套接字)
+		//    --> 因为信号signal事件，采用管道形式监听, 所以也加入到IO
 	}
 
 	if (res == epollop->nevents && epollop->nevents < MAX_NEVENT) {

@@ -333,6 +333,7 @@ evutil_make_listen_socket_reuseable(evutil_socket_t sock)
 #endif
 }
 
+// 将fd设置为CLOSE_EXEC：当调用exec启子进程时，该fd将会在子进程中处于CLOSE状态
 int
 evutil_make_socket_closeonexec(evutil_socket_t fd)
 {

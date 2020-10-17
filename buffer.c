@@ -344,6 +344,8 @@ _evbuffer_chain_unpin(struct evbuffer_chain *chain, unsigned flag)
 		evbuffer_chain_free(chain);
 }
 
+
+// 新建缓冲区
 struct evbuffer *
 evbuffer_new(void)
 {

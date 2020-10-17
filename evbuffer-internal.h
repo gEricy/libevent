@@ -75,7 +75,7 @@ struct evbuffer_cb_entry {
 
 struct bufferevent;
 struct evbuffer_chain;
-struct evbuffer {
+struct evbuffer {  // 缓冲区结构体：存储数据的缓冲区实现
 	/** The first chain in this buffer's linked list of chains. */
 	struct evbuffer_chain *first;
 	/** The last chain in this buffer's linked list of chains. */

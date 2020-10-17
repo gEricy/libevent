@@ -87,10 +87,10 @@ static void be_socket_setfd(struct bufferevent *, evutil_socket_t);
 const struct bufferevent_ops bufferevent_ops_socket = {
 	"socket",
 	evutil_offsetof(struct bufferevent_private, bev),
-	be_socket_enable,
-	be_socket_disable,
+	be_socket_enable,  // 注册事件监听
+	be_socket_disable, // 取下事件监听
 	be_socket_destruct,
-	be_socket_adj_timeouts,
+	be_socket_adj_timeouts,  // 调整超时时间
 	be_socket_flush,
 	be_socket_ctrl,
 };
@@ -313,6 +313,9 @@ bufferevent_writecb(evutil_socket_t fd, short event, void *arg)
 	_bufferevent_decref_and_unlock(bufev);
 }
 
+/*
+ * @brief 为文件描述符fd，创建缓冲区事件
+ */
 struct bufferevent *
 bufferevent_socket_new(struct event_base *base, evutil_socket_t fd,
     int options)
@@ -336,13 +339,17 @@ bufferevent_socket_new(struct event_base *base, evutil_socket_t fd,
 	bufev = &bufev_p->bev;
 	evbuffer_set_flags(bufev->output, EVBUFFER_FLAG_DRAINS_TO_FD);
 
+	// 读事件
 	event_assign(&bufev->ev_read, bufev->ev_base, fd,
 	    EV_READ|EV_PERSIST, bufferevent_readcb, bufev);
+	// 写事件
 	event_assign(&bufev->ev_write, bufev->ev_base, fd,
 	    EV_WRITE|EV_PERSIST, bufferevent_writecb, bufev);
 
 	evbuffer_add_cb(bufev->output, bufferevent_socket_outbuf_cb, bufev);
 
+	//冻结读缓冲区的尾部，未解冻之前不能往读缓冲区追加数据
+	//也就是说不能从socket fd中读取数据
 	evbuffer_freeze(bufev->input, 0);
 	evbuffer_freeze(bufev->output, 1);
 
@@ -521,14 +528,8 @@ bufferevent_socket_get_dns_error(struct bufferevent *bev)
 }
 
 /*
- * Create a new buffered event object.
- *
- * The read callback is invoked whenever we read new data.
- * The write callback is invoked whenever the output buffer is drained.
- * The error callback is invoked on a write/read error or on EOF.
- *
- * Both read and write callbacks maybe NULL.  The error callback is not
- * allowed to be NULL and have to be provided always.
+ * 创建bufferevent对象
+ * 设置回调函数
  */
 
 struct bufferevent *
@@ -546,7 +547,7 @@ bufferevent_new(evutil_socket_t fd,
 	return bufev;
 }
 
-
+// 添加读写事件的监听
 static int
 be_socket_enable(struct bufferevent *bufev, short event)
 {
@@ -616,16 +617,18 @@ be_socket_flush(struct bufferevent *bev, short iotype,
 	return 0;
 }
 
-
+// 取消之前绑定的fd，给新的fd设置缓冲区事件
 static void
 be_socket_setfd(struct bufferevent *bufev, evutil_socket_t fd)
 {
 	BEV_LOCK(bufev);
 	EVUTIL_ASSERT(bufev->be_ops == &bufferevent_ops_socket);
 
+	// 取消之前在bufev->fd上监听的事件
 	event_del(&bufev->ev_read);
 	event_del(&bufev->ev_write);
 
+	// 在新fd上注册监听事件
 	event_assign(&bufev->ev_read, bufev->ev_base, fd,
 	    EV_READ|EV_PERSIST, bufferevent_readcb, bufev);
 	event_assign(&bufev->ev_write, bufev->ev_base, fd,
@@ -670,7 +673,7 @@ bufferevent_base_set(struct event_base *base, struct bufferevent *bufev)
 
 	bufev->ev_base = base;
 
-	res = event_base_set(base, &bufev->ev_read);
+	res = event_base_set(base, &bufev->ev_read);  
 	if (res == -1)
 		goto done;
 
@@ -686,10 +689,10 @@ be_socket_ctrl(struct bufferevent *bev, enum bufferevent_ctrl_op op,
 {
 	switch (op) {
 	case BEV_CTRL_SET_FD:
-		be_socket_setfd(bev, data->fd);
+		be_socket_setfd(bev, data->fd);  // 取消旧的fd，绑定新的fd
 		return 0;
 	case BEV_CTRL_GET_FD:
-		data->fd = event_get_fd(&bev->ev_read);
+		data->fd = event_get_fd(&bev->ev_read); // 获取读事件绑定的fd
 		return 0;
 	case BEV_CTRL_GET_UNDERLYING:
 	case BEV_CTRL_CANCEL_ALL:

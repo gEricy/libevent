@@ -226,24 +226,17 @@ struct bufferevent_ops {
 	*/
 	off_t mem_offset;
 
-	/** Enables one or more of EV_READ|EV_WRITE on a bufferevent.  Does
-	    not need to adjust the 'enabled' field.  Returns 0 on success, -1
-	    on failure.
-	 */
+
+    // 将event添加到事件根基中监听
 	int (*enable)(struct bufferevent *, short);
 
-	/** Disables one or more of EV_READ|EV_WRITE on a bufferevent.  Does
-	    not need to adjust the 'enabled' field.  Returns 0 on success, -1
-	    on failure.
-	 */
+	// 将event从事件根基中移除监听
 	int (*disable)(struct bufferevent *, short);
 
-	/** Free any storage and deallocate any extra data or structures used
-	    in this implementation.
-	 */
+	// 销毁
 	void (*destruct)(struct bufferevent *);
 
-	/** Called when the timeouts on the bufferevent have changed.*/
+	// 调整event的超时时间
 	int (*adj_timeouts)(struct bufferevent *);
 
 	/** Called to flush data. */
@@ -251,7 +244,6 @@ struct bufferevent_ops {
 
 	/** Called to access miscellaneous fields. */
 	int (*ctrl)(struct bufferevent *, enum bufferevent_ctrl_op, union bufferevent_ctrl_data *);
-
 };
 
 extern const struct bufferevent_ops bufferevent_ops_socket;

@@ -1196,6 +1196,8 @@ common_timeout_callback(evutil_socket_t fd, short what, void *arg)
 
 #define MAX_COMMON_TIMEOUTS 256
 
+// 向event_base申请一个具有特定时长的common_timeout_list。
+// 每申请一个，就会在common_timeout_queues数组中加入一个common_timeout_list元素
 const struct timeval *
 event_base_init_common_timeout(struct event_base *base,
     const struct timeval *duration)
@@ -1217,6 +1219,7 @@ event_base_init_common_timeout(struct event_base *base,
 	for (i = 0; i < base->n_common_timeouts; ++i) {
 		const struct common_timeout_list *ctl =
 		    base->common_timeout_queues[i];
+        // 具有相同的duration， 即之前有申请过这个超时时长。那么就不用分配空间。
 		if (duration->tv_sec == ctl->duration.tv_sec &&
 		    duration->tv_usec ==
 		    (ctl->duration.tv_usec & MICROSECONDS_MASK)) {
@@ -1225,12 +1228,14 @@ event_base_init_common_timeout(struct event_base *base,
 			goto done;
 		}
 	}
+    // 达到了最大申请个数，不能再分配了
 	if (base->n_common_timeouts == MAX_COMMON_TIMEOUTS) {
 		event_warnx("%s: Too many common timeouts already in use; "
 		    "we only support %d per event_base", __func__,
 		    MAX_COMMON_TIMEOUTS);
 		goto done;
 	}
+    // 之前分配的空间已经用完了，要重新申请空间
 	if (base->n_common_timeouts_allocated == base->n_common_timeouts) {
 		int n = base->n_common_timeouts < 16 ? 16 :
 		    base->n_common_timeouts*2;
@@ -1244,6 +1249,7 @@ event_base_init_common_timeout(struct event_base *base,
 		base->n_common_timeouts_allocated = n;
 		base->common_timeout_queues = newqueues;
 	}
+    //为该超时时长分配一个common_timeout_list结构体
 	new_ctl = mm_calloc(1, sizeof(struct common_timeout_list));
 	if (!new_ctl) {
 		event_warn("%s: calloc",__func__);
@@ -1254,11 +1260,13 @@ event_base_init_common_timeout(struct event_base *base,
 	new_ctl->duration.tv_usec =
 	    duration->tv_usec | COMMON_TIMEOUT_MAGIC |
 	    (base->n_common_timeouts << COMMON_TIMEOUT_IDX_SHIFT);
+    //对timeout_event这个内部event进行赋值。设置回调函数和回调参数。
 	evtimer_assign(&new_ctl->timeout_event, base,
 	    common_timeout_callback, new_ctl);
-	new_ctl->timeout_event.ev_flags |= EVLIST_INTERNAL;
-	event_priority_set(&new_ctl->timeout_event, 0);
+	new_ctl->timeout_event.ev_flags |= EVLIST_INTERNAL; //标志成内部event
+	event_priority_set(&new_ctl->timeout_event, 0);  //优先级为最高级
 	new_ctl->base = base;
+    //放到数组对应的位置上
 	base->common_timeout_queues[base->n_common_timeouts++] = new_ctl;
 	result = &new_ctl->duration;
 

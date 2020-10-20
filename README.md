@@ -4,6 +4,9 @@
 3. 核心思想：(1)首先要创建一个事件根基结构体event_base，它相当于是一个插座，它其实是一个epoll红黑树；(2)所有的事件都可以插在该插座上，由该插座监听所有注册的事件，等事件触发时调用该事件注册的回调函数
 
 # 学习建议
+- 代码阅读的基本功：熟悉Unix内核编程，学习该网络库之前，最好先阅读APUE那3本宝书。对于内核编程，书写过一些博文，如：<br/>
+      (1) Unix编程之进程间通信IPC：https://blog.csdn.net/weixin_36750623/category_8123811.html<br/>
+      (2) Unix内核编程相关：https://blog.csdn.net/weixin_36750623/category_8280999.html
 - 之前研究生期间，跟过网课，浅显的看过源码，但是没有深究，记录了一些笔记，见CSDN博客（主要以介绍原理为主，想深入还是要扎进源代码中）：https://blog.csdn.net/weixin_36750623/category_8281007.html
 - 读源代码，首先要有“驱动”接口思想，以及一些最基本的原理，如：epoll实现原理、反应堆模式Reactor、缓冲区、信号Signal、缓冲区等概念
 
@@ -17,3 +20,5 @@
 - 采用本地全双工管道socket_pair，结合信号signal函数（基本流程参考`图_signal事件流程`）
 ![image text](https://github.com/gEricy/libevent/blob/master/%E5%9B%BE_signal%E4%BA%8B%E4%BB%B6%E6%B5%81%E7%A8%8B.png)
 - 将signal事件作为读写I\O事件处理
+4. 除此之外
+- libevent还对文件描述符fd，封装了一套缓冲区事件bufferevent，原理就是将fd与event绑定，对其注册读写事件，根据读写缓冲区水位线的情况，触发不同的处理策略

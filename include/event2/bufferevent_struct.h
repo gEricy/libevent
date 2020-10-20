@@ -60,48 +60,30 @@ struct event_watermark {
 };
 
 /**
-  Shared implementation of a bufferevent.
-
-  This type is exposed only because it was exposed in previous versions,
-  and some people's code may rely on manipulating it.  Otherwise, you
-  should really not rely on the layout, size, or contents of this structure:
-  it is fairly volatile, and WILL change in future versions of the code.
+	fd绑定的缓冲区事件
+		1. 将fd封装成带缓冲区的读写事件
+		2. 根据水位线对事件进行触发
 **/
 struct bufferevent {
-	/** Event base for which this bufferevent was created. */
-	struct event_base *ev_base;
-	/** Pointer to a table of function pointers to set up how this
-	    bufferevent behaves. */
-	const struct bufferevent_ops *be_ops;
+	struct event_base *ev_base;  // 该bufferevent属于哪个事件根基
 
-	/** A read event that triggers when a timeout has happened or a socket
-	    is ready to read data.  Only used by some subtypes of
-	    bufferevent. */
-	struct event ev_read;
-	/** A write event that triggers when a timeout has happened or a socket
-	    is ready to write data.  Only used by some subtypes of
-	    bufferevent. */
-	struct event ev_write;
+	const struct bufferevent_ops *be_ops;  // bufferevent_ops_socket, 后端驱动
 
-	/** An input buffer. Only the bufferevent is allowed to add data to
-	    this buffer, though the user is allowed to drain it. */
-	struct evbuffer *input;
+	struct event ev_read;    // 读事件
+	struct event ev_write;   // 写事件
 
-	/** An input buffer. Only the bufferevent is allowed to drain data
-	    from this buffer, though the user is allowed to add it. */
-	struct evbuffer *output;
+	struct evbuffer *input;  // 读缓冲区
+	struct evbuffer *output; // 写缓冲区
 
-	struct event_watermark wm_read;
-	struct event_watermark wm_write;
+	struct event_watermark wm_read;   // 读水位线
+	struct event_watermark wm_write;  // 写水位线
 
-	bufferevent_data_cb readcb;
-	bufferevent_data_cb writecb;
-	/* This should be called 'eventcb', but renaming it would break
-	 * backward compatibility */
-	bufferevent_event_cb errorcb;
+	bufferevent_data_cb readcb;   // 读回调函数
+	bufferevent_data_cb writecb;  // 写回调函数
+	bufferevent_event_cb errorcb; // 错误发生时的回调函数指针
 	void *cbarg;
 
-	struct timeval timeout_read;
+	struct timeval timeout_read;  //读事件的超时值
 	struct timeval timeout_write;
 
 	/** Events that are currently enabled: currently EV_READ and EV_WRITE

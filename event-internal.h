@@ -209,7 +209,10 @@ struct event_base {
 	int running_loop;
 
 	/** An array of common_timeout_list* for all of the common timeout
-	 * values we know. */
+	 * values we know. 
+	 * 一个数组，每个数组元素是一个链表（链表中的每个节点的超时时间相同）
+	 * 使用场景：具有大量相同的超时事件
+	 * 原理类似于“时间轮”*/
 	struct common_timeout_list **common_timeout_queues;
 	/** The number of entries used in common_timeout_queues */
 	int n_common_timeouts;
